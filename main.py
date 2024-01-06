@@ -70,11 +70,11 @@ parser.add_argument("--min_learning_rate", type=float, default=6e-5)
 
 parser.add_argument("--legacy_lr_schedule", action="store_true", default=False)
 
-parser.add_argument("--legacy_learning_rate", type=float, default=1e-4)
+parser.add_argument("--legacy_large_lr", type=float, default=1e-4)
 
-parser.add_argument("--legacy_min_learning_rate", type=float, default=2e-5)
+parser.add_argument("--legacy_small_lr", type=float, default=2e-5)
 
-parser.add_argument("--nb_large_lr_epochs", type=float, default=10)
+parser.add_argument("--legacy_nb_epoch_large_lr", type=float, default=10)
 
 ########################################
 
@@ -477,11 +477,11 @@ def get_lr(n_epoch, it):
         # warmup though
 
         if it < args.nb_warmup_iter:
-            return args.legacy_learning_rate * it / args.nb_warmup_iter
-        elif it < args.nb_large_lr_epochs:
-            return args.legacy_learning_rate
+            return args.legacy_large_lr * it / args.nb_warmup_iter
+        elif it < args.legacy_nb_epoch_large_lr:
+            return args.legacy_large_lr
         else:
-            return args.legacy_min_learning_rate
+            return args.legacy_small_lr
 
     # from nanoGPT
 
