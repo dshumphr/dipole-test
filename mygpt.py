@@ -519,13 +519,22 @@ class Caterpillar(nn.Module):
 
         if bs.init_cache:
             self.rec_V = X.new_zeros(N, CH, T, DV)
-            self.rec_V[:, :, t0 - CL : t0] = self.init_V_rec[None, :, :, :]
             self.rec_K = X.new_zeros(N, CH, T, DK)
+            # We start the recurrent sequences with optimizable
+            # initial values. No idea if it helps.
+            self.rec_V[:, :, t0 - CL : t0] = self.init_V_rec[None, :, :, :]
             self.rec_K[:, :, t0 - CL : t0] = self.init_K_rec[None, :, :, :]
+
             self.cache_Y = X.new_zeros(N, T, Dout)
 
         ######################################################################
         # Compute the recurrent state
+
+        # This is the Gating sequence that modulates if they key and
+        # values should be stored in one of the CH pairs of the
+        # current stack. The CH gating values are independent, which
+        # means that the same thing could be stored multiple times or
+        # not at all
 
         G = (
             torch.einsum("ntc,hec->nhet", X, self.w_G) + self.b_G[None, :, :, None]
@@ -534,6 +543,8 @@ class Caterpillar(nn.Module):
         V = torch.einsum("ntc,hdc->nhtd", X, self.w_V)
         K = torch.einsum("ntc,hdc->nhtd", X, self.w_K)
 
+        # We prepare the arguments for the parallel scan
+
         A = 1 - G.sum(1)
         gated_V = torch.einsum("nhet,nhtd->netd", G, V)
         gated_K = torch.einsum("nhet,nhtd->netd", G, K)
@@ -541,12 +552,19 @@ class Caterpillar(nn.Module):
         init_rec_V = self.rec_V[:, :, t0 - CL : t0]
         init_rec_K = self.rec_K[:, :, t0 - CL : t0]
 
+        # Here there is a trick: The parallel scan operates with a
+        # period of L, so we split the sequence indexing in two axes,
+        # the second of size CL, and run the parallel scan using the
+        # other alone as the sequence index.
+
         A = A.unflatten(2, (-1, CL))
         gated_V = gated_V.unflatten(2, (-1, CL))
         gated_K = gated_K.unflatten(2, (-1, CL))
 
         next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
         next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
+
+        # Put back the sequence index
 
         self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
@@ -556,29 +574,42 @@ class Caterpillar(nn.Module):
 
         Q = torch.einsum("ntc,hdc->nhtd", X, self.w_Q)
 
-        uv = moving_window(
+        # We build tensors NxHxTxFxL where N is the sample index, H
+        # the head, T the time, F the row in the caterpillar, and L
+        # the column in the caterpillar
+
+        windowed_V = moving_window(
             self.rec_V[:, :, t0 - CL + 1 : t1], dim=2, win_dim=3, win_size=CL
         )
 
-        uk = moving_window(
+        windowed_K = moving_window(
             self.rec_K[:, :, t0 - CL + 1 : t1], dim=2, win_dim=3, win_size=CL
         )
+
+        # We have an attention score for each of the CHxCL value
 
         ar = torch.einsum(
             "nhtd,nftld->nhtfl",
             Q,
-            uk,
+            windowed_K,
         ) / math.sqrt(DK)
+
+        # softmax can operate only on one dimension, hence the
+        # flattening
 
         ar = ar.flatten(3).softmax(dim=3).view(ar.size())
 
         ar = F.dropout(ar, self.attention_dropout, self.training)
 
+        # Compute the output for each head, flatten to concatenate
+
         Y = torch.einsum(
             "nhtfl,nftld->nthd",
             ar,
-            uv,
+            windowed_V,
         ).flatten(2)
+
+        # Compute the final output
 
         self.cache_Y[:, t0:t1] = Y @ self.w_O
 
