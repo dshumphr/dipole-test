@@ -442,7 +442,8 @@ class KVRec(nn.Module):
 
 
 # Returns a tensor with an additional index at rank win_dim, that move
-# along the same dimension as dim, on a domain {0...win_size-1}
+# along the same dimension as dim, on a domain {0...win_size-1}, and
+# dim is restricted on a domain reduced by win_size-1 values.
 
 
 def moving_window(x, dim, win_dim, win_size):
