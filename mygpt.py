@@ -441,6 +441,10 @@ class KVRec(nn.Module):
 ##############################
 
 
+# Returns a tensor with an additional index at rank win_dim, that move
+# along the same dimension as dim, on a domain {0...win_size-1}
+
+
 def moving_window(x, dim, win_dim, win_size):
     size, stride = x.size(), x.stride()
     size = size[:dim] + (size[dim] - win_size + 1,) + size[dim + 1 :]
