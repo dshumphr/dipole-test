@@ -545,6 +545,8 @@ class Caterpillar(nn.Module):
             torch.einsum("ntc,hec->nhet", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
 
+        G = F.dropout(G, self.attention_dropout, self.training)
+
         V = torch.einsum("ntc,hdc->nhtd", X, self.w_V)
         K = torch.einsum("ntc,hdc->nhtd", X, self.w_K)
 
