@@ -478,7 +478,7 @@ def get_lr(n_epoch, it):
 
         if it < args.nb_warmup_iter:
             return args.legacy_large_lr * it / args.nb_warmup_iter
-        elif it < args.legacy_nb_epoch_large_lr:
+        elif n_epoch < args.legacy_nb_epoch_large_lr:
             return args.legacy_large_lr
         else:
             return args.legacy_small_lr
