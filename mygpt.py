@@ -533,7 +533,7 @@ class Caterpillar(nn.Module):
         # This is the Gating sequence that modulates if they key and
         # values should be stored in one of the CH pairs of the
         # current stack. The CH gating values are independent, which
-        # means that the same thing could be stored multiple times or
+        # means that the same thing could be stored up to CH times or
         # not at all
 
         G = (
@@ -586,7 +586,7 @@ class Caterpillar(nn.Module):
             self.rec_K[:, :, t0 - CL + 1 : t1], dim=2, win_dim=3, win_size=CL
         )
 
-        # We have an attention score for each of the CHxCL value
+        # We have an attention score for each of the CHxCL values
 
         ar = torch.einsum(
             "nhtd,nftld->nhtfl",
