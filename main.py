@@ -346,6 +346,7 @@ default_model_args = {
         "nb_blocks": 6,
     },
     "37M": {
+        "attention": "mha",
         "dim_model": 512,
         "dim_keys": 64,
         "dim_hidden": 2048,
