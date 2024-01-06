@@ -563,7 +563,7 @@ class Caterpillar(nn.Module):
         # by updating that at time t-L, the parallel scan operates
         # with a period of L. To do so we split the time indexing in
         # two axes, the second of size CL, and run the parallel scan
-        # using the other alone as the sequence index.
+        # using the other as the sequence index.
 
         A = A.unflatten(2, (-1, CL))
         gated_V = gated_V.unflatten(2, (-1, CL))
