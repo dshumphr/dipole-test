@@ -16,7 +16,6 @@ import torch, einops
 
 from torch import nn
 from torch.nn import functional as F
-from functorch.dim import dims
 
 import ffutils
 
@@ -351,8 +350,6 @@ class KVRec(nn.Module):
 
     def forward(self, bs):
         x_q, t0, t1 = bs.x, bs.first, bs.first + bs.nb
-
-        # n,h,l,t,d = dims(5)
 
         if bs.init_cache:
             self.rec_v = x_q.new_zeros(
