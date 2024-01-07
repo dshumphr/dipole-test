@@ -655,7 +655,7 @@ class Caterpillar(nn.Module):
         self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
 
-        if self.training and self.proba_flashback:
+        if self.training and self.proba_flashback > 0.0:
             # insert_flash_back(self.rec_V,V,self.rec_K,K,t0,t1,CL,proba=self.proba_flashback / CL,)
 
             # This piece of code makes the assumption that there is
