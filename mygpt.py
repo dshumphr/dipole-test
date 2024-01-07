@@ -457,7 +457,8 @@ def moving_window(x, dim, win_dim, win_size):
 
 ##############################
 
-# This is one order of magnitude more complicated than I expected
+# This is one order of magnitude more complicated than I expected, not
+# elegant, slow, hopefully not buggy
 
 
 def flash_back_time_src(N, H, t0, t1, CL, CH, proba, device):
