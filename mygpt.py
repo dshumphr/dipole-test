@@ -472,15 +472,18 @@ def flash_back_time_src(N, H, t0, t1, CL, CH, proba, device):
     fb_body = fb_body.cumsum(dim=2)
     fb_start = fb_start * (fb_body == 1)
 
-    # pick past starting source times
-    src_time = (
-        fb_start
+    # t_s = t0-(t0//L * R)*L
+
+    t = torch.arange(fb_start.size(2), device=fb_start.device)[None, None, :]
+    src_time = fb_start * (
+        t
+        - CL
         * (
-            torch.rand(fb_start.size(), device=fb_start.device)
-            * (torch.arange(fb_start.size(2), device=fb_start.device) - CL)[
-                None, None, :
-            ]
-        ).long()
+            1
+            + (
+                torch.rand(fb_start.size(), device=fb_start.device) * (t // CL - 1)
+            ).long()
+        )
     )
     src_time[:, :, CL:] -= src_time.clone()[:, :, :-CL]
     src_time = src_time.cumsum(dim=2)
