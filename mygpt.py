@@ -562,6 +562,9 @@ class Caterpillar(nn.Module):
         self.caterpillar_height = caterpillar_height
         self.attention_dropout = attention_dropout
 
+        warnings.warn("flash back", RuntimeWarning)
+        self.proba_flashback = 0.1
+
         self.w_G = randw(nb_heads, caterpillar_height, dim_model)
         self.b_G = nn.Parameter(
             torch.full(
@@ -593,6 +596,7 @@ class Caterpillar(nn.Module):
 
         N = bs.x.size(0)
         T = bs.x.size(1)
+        H = self.w_V.size(0)
         DV = self.w_V.size(1)
         DK = self.w_K.size(1)
         DM = self.w_O.size(1)
@@ -661,9 +665,37 @@ class Caterpillar(nn.Module):
         self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
 
-        warnings.warn("flash back", RuntimeWarning)
-        if self.training:
-            insert_flash_back(self.rec_V, V, self.rec_K, K, t0, t1, CL, proba=1e-2 / CL)
+        if self.training and self.proba_flashback:
+            insert_flash_back(
+                self.rec_V,
+                V,
+                self.rec_K,
+                K,
+                t0,
+                t1,
+                CL,
+                proba=self.proba_flashback / CL,
+            )
+
+            # n = torch.arange(N, device=X.device)[:, None, None, None]
+            # t = torch.arange(t0, t1, device=X.device)[None, None, :, None]
+            # dv = torch.arange(DV)[None, None, None, :]
+            # dk = torch.arange(DK)[None, None, None, :]
+
+            # u = (
+            # torch.rand(N, CH, t1 - t0, 1, device=X.device).mul(t).long() // CL
+            # ) * CL
+
+            # src_time = t - u - t0
+            # src_head = torch.randint(H, (N, CH, t1 - t0, 1), device=X.device)
+
+            # mk = (
+            # torch.rand(self.rec_V[:, :, t0:t1].size()) <= self.proba_flashback
+            # ).long()
+            # self.rec_V[:, :, t0:t1] = V[n, src_head, src_time, dv]
+            # self.rec_K[:, :, t0:t1] = K[n, src_head, src_time, dk]
+
+        exit(0)
 
         ######################################################################
         # compute the readout
