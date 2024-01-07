@@ -656,6 +656,12 @@ class Caterpillar(nn.Module):
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
 
         if self.training and self.proba_flashback:
+            # This piece of code makes the assumption that there is
+            # nothing informative before t0, otherwise we'd have to
+            # implement a cache for V and K too. This should not be
+            # too much of a problem since this is used only during
+            # train, where full sequence are available
+
             # insert_flash_back(
             # self.rec_V,
             # V,
