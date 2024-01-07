@@ -472,8 +472,9 @@ def flash_back_time_src(N, H, t0, t1, CL, CH, proba, device):
     fb_body = fb_body.cumsum(dim=2)
     fb_start = fb_start * (fb_body == 1)
 
-    # t_s = t0-(t0//L * R)*L
-
+    # Set a origin source time (at what time start the chunck to copy
+    # here) We set it as a multiple of CL to be consistent with the
+    # "rolling" caterpillar
     t = torch.arange(fb_start.size(2), device=fb_start.device)[None, None, :]
     src_time = fb_start * (
         t
