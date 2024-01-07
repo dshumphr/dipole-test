@@ -509,31 +509,21 @@ def insert_flash_back(rec_V, V, rec_K, K, t0, t1, CL, proba):
 
     fbt, fbh = flash_back_time_src(N, H, t0, t1, CL, CH, proba, rec_V.device)
 
-    fbt_V = fbt[:, :, :, None].expand_as(rec_V[:, :, t0:t1])
-    fbh_V = fbh[:, :, :, None].expand_as(rec_V[:, :, t0:t1])
+    fbt_V = fbt[:, :, :, None]
+    fbh_V = fbh[:, :, :, None]
     t = fbt_V.clamp(min=0)
-    n = torch.arange(V.size(0), device=V.device)[:, None, None, None].expand_as(
-        rec_V[:, :, t0:t1]
-    )
-    d = torch.arange(V.size(3), device=V.device)[None, None, None, :].expand_as(
-        rec_V[:, :, t0:t1]
-    )
+    n = torch.arange(V.size(0), device=V.device)[:, None, None, None]
+    d = torch.arange(V.size(3), device=V.device)[None, None, None, :]
     q = V[:, :, t0:t1][n, fbh_V, t, d]
     rec_V[:, :, t0:t1] = q * (fbt_V >= 0) + rec_V[:, :, t0:t1] * (fbt_V < 0)
 
-    fbt_K = fbt[:, :, :, None].expand_as(rec_K[:, :, t0:t1])
-    fbh_K = fbh[:, :, :, None].expand_as(rec_K[:, :, t0:t1])
+    fbt_K = fbt[:, :, :, None]
+    fbh_K = fbh[:, :, :, None]
     t = fbt_K.clamp(min=0)
-    n = torch.arange(K.size(0), device=K.device)[:, None, None, None].expand_as(
-        rec_K[:, :, t0:t1]
-    )
-    d = torch.arange(K.size(3), device=K.device)[None, None, None, :].expand_as(
-        rec_K[:, :, t0:t1]
-    )
+    n = torch.arange(K.size(0), device=K.device)[:, None, None, None]
+    d = torch.arange(K.size(3), device=K.device)[None, None, None, :]
     q = K[:, :, t0:t1][n, fbh_K, t, d]
     rec_K[:, :, t0:t1] = q * (fbt_K >= 0) + rec_K[:, :, t0:t1] * (fbt_K < 0)
-
-    # print("SANITY", (fbt_K >=0).float().sum()/fbt_K.numel())
 
 
 ######################################################################
