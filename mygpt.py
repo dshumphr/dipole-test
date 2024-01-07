@@ -457,6 +457,82 @@ def moving_window(x, dim, win_dim, win_size):
 
 ##############################
 
+# This is one order of magnitude more complicated than I expected
+
+
+def flash_back_time_src(N, H, t0, t1, CL, CH, proba, device):
+    # starting flash backs
+    fb_start = (torch.rand(N, CH, t1 - t0, device=device) <= proba).long()
+    fb_start[:, :, -CL:] = 0
+    fb_start[:, :, :CL] = 0
+
+    # Remove series longer than CL
+    fb_body = fb_start.clone()
+    fb_body[:, :, CL + 1 :] -= fb_start[:, :, : -(CL + 1)]
+    fb_body = fb_body.cumsum(dim=2)
+    fb_start = fb_start * (fb_body == 1)
+
+    # pick past starting source times
+    src_time = (
+        fb_start
+        * (
+            torch.rand(fb_start.size(), device=fb_start.device)
+            * (torch.arange(fb_start.size(2), device=fb_start.device) - CL)[
+                None, None, :
+            ]
+        ).long()
+    )
+    src_time[:, :, CL:] -= src_time.clone()[:, :, :-CL]
+    src_time = src_time.cumsum(dim=2)
+
+    src_head = fb_start * torch.randint(H, fb_start.size(), device=fb_start.device)
+    src_head[:, :, CL:] -= src_head.clone()[:, :, :-CL]
+    src_head = src_head.cumsum(dim=2)
+
+    # combine
+    src_delta = fb_start.clone()
+    src_delta[:, :, CL:] -= fb_start[:, :, :-CL]
+    src_delta = src_delta.cumsum(dim=2)
+    src_delta[:, :, CL:] -= CL * fb_start[:, :, :-CL]
+    src_time += src_delta.cumsum(dim=2) - 1
+
+    return src_time, src_head
+
+
+def insert_flash_back(rec_V, V, rec_K, K, t0, t1, CL, proba):
+    N, H, CH = V.size(0), V.size(1), rec_V.size(1)
+
+    fbt, fbh = flash_back_time_src(N, H, t0, t1, CL, CH, proba, rec_V.device)
+
+    fbt_V = fbt[:, :, :, None].expand_as(rec_V[:, :, t0:t1])
+    fbh_V = fbh[:, :, :, None].expand_as(rec_V[:, :, t0:t1])
+    t = fbt_V.clamp(min=0)
+    n = torch.arange(V.size(0), device=V.device)[:, None, None, None].expand_as(
+        rec_V[:, :, t0:t1]
+    )
+    d = torch.arange(V.size(3), device=V.device)[None, None, None, :].expand_as(
+        rec_V[:, :, t0:t1]
+    )
+    q = V[:, :, t0:t1][n, fbh_V, t, d]
+    rec_V[:, :, t0:t1] = q * (fbt_V >= 0) + rec_V[:, :, t0:t1] * (fbt_V < 0)
+
+    fbt_K = fbt[:, :, :, None].expand_as(rec_K[:, :, t0:t1])
+    fbh_K = fbh[:, :, :, None].expand_as(rec_K[:, :, t0:t1])
+    t = fbt_K.clamp(min=0)
+    n = torch.arange(K.size(0), device=K.device)[:, None, None, None].expand_as(
+        rec_K[:, :, t0:t1]
+    )
+    d = torch.arange(K.size(3), device=K.device)[None, None, None, :].expand_as(
+        rec_K[:, :, t0:t1]
+    )
+    q = K[:, :, t0:t1][n, fbh_K, t, d]
+    rec_K[:, :, t0:t1] = q * (fbt_K >= 0) + rec_K[:, :, t0:t1] * (fbt_K < 0)
+
+    # print("SANITY", (fbt_K >=0).float().sum()/fbt_K.numel())
+
+
+######################################################################
+
 
 class Caterpillar(nn.Module):
     def __init__(
@@ -540,14 +616,15 @@ class Caterpillar(nn.Module):
         # This is the Gating sequence that modulates the storing of
         # the new key and value in the CH pairs of the current
         # stack. The CH gating values are independent, which means
-        # that the current K/V could be stored in all the pairs of the
+        # that the current K/V could be stored in multiple pairs of the
         # recurrent state, or not at all.
 
         G = (
             torch.einsum("ntc,hec->nhet", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
 
-        G = F.dropout(G, self.attention_dropout, self.training)
+        # That bas a bad idea
+        # G = F.dropout(G, self.attention_dropout, self.training)
 
         V = torch.einsum("ntc,hdc->nhtd", X, self.w_V)
         K = torch.einsum("ntc,hdc->nhtd", X, self.w_K)
@@ -578,6 +655,10 @@ class Caterpillar(nn.Module):
 
         self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
+
+        warnings.warn("flash back", RuntimeWarning)
+        if self.training:
+            insert_flash_back(self.rec_V, V, self.rec_K, K, t0, t1, CL, proba=1e-2 / CL)
 
         ######################################################################
         # compute the readout
