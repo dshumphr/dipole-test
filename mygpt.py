@@ -695,8 +695,6 @@ class Caterpillar(nn.Module):
                 + (1 - mask_K) * self.rec_K[:, :, t0:t1]
             )
 
-        exit(0)
-
         ######################################################################
         # compute the readout
 
