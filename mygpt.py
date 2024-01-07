@@ -656,34 +656,40 @@ class Caterpillar(nn.Module):
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
 
         if self.training and self.proba_flashback:
-            insert_flash_back(
-                self.rec_V,
-                V,
-                self.rec_K,
-                K,
-                t0,
-                t1,
-                CL,
-                proba=self.proba_flashback / CL,
+            # insert_flash_back(
+            # self.rec_V,
+            # V,
+            # self.rec_K,
+            # K,
+            # t0,
+            # t1,
+            # CL,
+            # proba=self.proba_flashback / CL,
+            # )
+
+            n = torch.arange(N, device=X.device)[:, None, None, None]
+            t = torch.arange(t0, t1, device=X.device)[None, None, :, None]
+            dv = torch.arange(DV)[None, None, None, :]
+            dk = torch.arange(DK)[None, None, None, :]
+
+            u = (
+                torch.rand(N, CH, t1 - t0, 1, device=X.device).mul(t).long() // CL
+            ) * CL
+
+            src_time = t - u - t0
+            src_head = torch.randint(H, (N, CH, t1 - t0, 1), device=X.device)
+
+            mask_V = (torch.rand(N, CH, t1 - t0, DV) <= self.proba_flashback).long()
+            self.rec_V[:, :, t0:t1] = (
+                mask_V * V[n, src_head, src_time, dv]
+                + (1 - mask_V) * self.rec_V[:, :, t0:t1]
             )
 
-            # n = torch.arange(N, device=X.device)[:, None, None, None]
-            # t = torch.arange(t0, t1, device=X.device)[None, None, :, None]
-            # dv = torch.arange(DV)[None, None, None, :]
-            # dk = torch.arange(DK)[None, None, None, :]
-
-            # u = (
-            # torch.rand(N, CH, t1 - t0, 1, device=X.device).mul(t).long() // CL
-            # ) * CL
-
-            # src_time = t - u - t0
-            # src_head = torch.randint(H, (N, CH, t1 - t0, 1), device=X.device)
-
-            # mk = (
-            # torch.rand(self.rec_V[:, :, t0:t1].size()) <= self.proba_flashback
-            # ).long()
-            # self.rec_V[:, :, t0:t1] = V[n, src_head, src_time, dv]
-            # self.rec_K[:, :, t0:t1] = K[n, src_head, src_time, dk]
+            mask_K = (torch.rand(N, CH, t1 - t0, DK) <= self.proba_flashback).long()
+            self.rec_K[:, :, t0:t1] = (
+                mask_K * K[n, src_head, src_time, dk]
+                + (1 - mask_K) * self.rec_K[:, :, t0:t1]
+            )
 
         exit(0)
 
