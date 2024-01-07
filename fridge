@@ -74,3 +74,10 @@ def insert_flash_back(rec_V, V, rec_K, K, t0, t1, CL, proba):
 
 
 ######################################################################
+
+######################################################################
+
+2024 Jan 07 21:38:11 (from mygpt.py)
+
+            # insert_flash_back(self.rec_V,V,self.rec_K,K,t0,t1,CL,proba=self.proba_flashback / CL,)
+
