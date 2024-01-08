@@ -37,7 +37,7 @@ import ffutils
 # 1 for the successive tokens.
 #
 # Modules able to process brackets may implement a cache that is
-# resetted when the input bracket starts at t=0
+# resetted when init_cache is True
 
 
 class BracketedSequence:
@@ -482,7 +482,7 @@ class Caterpillar(nn.Module):
         self.attention_dropout = attention_dropout
 
         warnings.warn("flash back", RuntimeWarning)
-        self.proba_flashback = 0.1
+        self.proba_flashback = 1e-2
 
         self.w_G = randw(nb_heads, caterpillar_height, dim_model)
         self.b_G = nn.Parameter(
@@ -603,20 +603,18 @@ class Caterpillar(nn.Module):
             src_time = t - u - t0
             src_head = torch.randint(H, (N, CH, t1 - t0, 1), device=X.device)
 
-            mask_V = (
+            mask = (
                 torch.rand(N, CH, t1 - t0, DV, device=X.device) <= self.proba_flashback
             ).long()
+
             self.rec_V[:, :, t0:t1] = (
-                mask_V * V[n, src_head, src_time, dv]
-                + (1 - mask_V) * self.rec_V[:, :, t0:t1]
+                mask * V[n, src_head, src_time, dv]
+                + (1 - mask) * self.rec_V[:, :, t0:t1]
             )
 
-            mask_K = (
-                torch.rand(N, CH, t1 - t0, DK, device=X.device) <= self.proba_flashback
-            ).long()
             self.rec_K[:, :, t0:t1] = (
-                mask_K * K[n, src_head, src_time, dk]
-                + (1 - mask_K) * self.rec_K[:, :, t0:t1]
+                mask * K[n, src_head, src_time, dk]
+                + (1 - mask) * self.rec_K[:, :, t0:t1]
             )
 
         ######################################################################
