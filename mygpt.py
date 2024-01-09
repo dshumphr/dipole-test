@@ -774,7 +774,6 @@ class MyGPT(nn.Module):
         nb_blocks,
         nb_lines=None,
         caterpillar_height=None,
-        dim_rec_v=-1,
         causal=False,
         dropout=0.0,
         len_max=1e5,
@@ -820,7 +819,7 @@ class MyGPT(nn.Module):
                 return DumbRec(
                     dim_model=dim_model,
                     dim_qk=dim_keys,
-                    dim_v=dim_rec_v,
+                    dim_v=dim_model // nb_heads,
                     nb_heads=nb_heads,
                     nb_lines=nb_lines,
                     attention_dropout=dropout,
@@ -829,7 +828,7 @@ class MyGPT(nn.Module):
                 return KVRec(
                     dim_model=dim_model,
                     dim_qk=dim_keys,
-                    dim_v=dim_rec_v,
+                    dim_v=dim_model // nb_heads,
                     nb_heads=nb_heads,
                     nb_lines=nb_lines,
                     attention_dropout=dropout,
@@ -838,7 +837,7 @@ class MyGPT(nn.Module):
                 return Caterpillar(
                     dim_model=dim_model,
                     dim_qk=dim_keys,
-                    dim_v=dim_rec_v,
+                    dim_v=dim_model // nb_heads,
                     nb_heads=nb_heads,
                     caterpillar_length=self.caterpillar_length,
                     caterpillar_height=self.caterpillar_height,
