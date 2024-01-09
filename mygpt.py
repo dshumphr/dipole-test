@@ -481,8 +481,8 @@ class Caterpillar(nn.Module):
         self.caterpillar_height = caterpillar_height
         self.attention_dropout = attention_dropout
 
-        warnings.warn("flash back", RuntimeWarning)
-        self.proba_flashback = 1e-2
+        self.proba_flashback = 0.0
+        self.proba_gate_dropout = 0.0
 
         self.w_G = randw(nb_heads, caterpillar_height, dim_model)
         self.b_G = nn.Parameter(
@@ -551,13 +551,21 @@ class Caterpillar(nn.Module):
             torch.einsum("ntc,hec->nhet", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
 
-        # That bas a bad idea
+        if self.training and self.proba_gate_dropout > 0.0:
+            warnings.warn("gate droupout", RuntimeWarning)
+            epsilon = 0.5
+
+        # That was a bad idea
         # G = F.dropout(G, self.attention_dropout, self.training)
 
         V = torch.einsum("ntc,hdc->nhtd", X, self.w_V)
         K = torch.einsum("ntc,hdc->nhtd", X, self.w_K)
 
         # We prepare the arguments for the parallel scan
+
+        # Clip the gating
+        warnings.warn("gating clipping", RuntimeWarning)
+        G = G / G.sum(1, keepdim=True).clamp(min=1)
 
         A = 1 - G.sum(1)
         gated_V = torch.einsum("nhet,nhtd->netd", G, V)
@@ -585,6 +593,7 @@ class Caterpillar(nn.Module):
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
 
         if self.training and self.proba_flashback > 0.0:
+            warnings.warn("flash back", RuntimeWarning)
             # This piece of code makes the assumption that there is
             # nothing informative before t0, otherwise we'd have to
             # implement a cache for V and K too. This should not be
