@@ -10,6 +10,8 @@
 # with a caching mechanism for keys and values to avoid a O(N^3) cost
 # for auto-regression.
 
+# This implementation is equipped with RNN layers to replace the MHA
+
 import math, warnings
 
 import torch, einops
