@@ -483,7 +483,6 @@ class Caterpillar(nn.Module):
         self.caterpillar_height = caterpillar_height
         self.attention_dropout = attention_dropout
 
-        self.proba_flashback = 0.0
         self.proba_gate_dropout = 0.0
 
         self.w_G = randw(nb_heads, caterpillar_height, dim_model)
@@ -572,6 +571,8 @@ class Caterpillar(nn.Module):
         init_rec_V = self.rec_V[:, :, t0 - CL : t0]
         init_rec_K = self.rec_K[:, :, t0 - CL : t0]
 
+        ######################################################################
+
         if self.training and self.proba_gate_dropout > 0.0:
             warnings.warn("gate dropout", RuntimeWarning)
             epsilon = 0.5
@@ -594,42 +595,6 @@ class Caterpillar(nn.Module):
 
         self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
         self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
-
-        #################################################################
-
-        if self.training and self.proba_flashback > 0.0:
-            warnings.warn("flash back", RuntimeWarning)
-            # This piece of code makes the assumption that there is
-            # nothing informative before t0, otherwise we'd have to
-            # implement a cache for V and K too. This should not be
-            # too much of a problem since this is used only during
-            # train, where full sequence are available
-
-            n = torch.arange(N, device=X.device)[:, None, None, None]
-            t = torch.arange(t0, t1, device=X.device)[None, None, :, None]
-            dv = torch.arange(DV, device=X.device)[None, None, None, :]
-            dk = torch.arange(DK, device=X.device)[None, None, None, :]
-
-            u = (
-                torch.rand(N, CH, t1 - t0, 1, device=X.device).mul(t).long() // CL
-            ) * CL
-
-            src_time = t - u - t0
-            src_head = torch.randint(H, (N, CH, t1 - t0, 1), device=X.device)
-
-            mask = (
-                torch.rand(N, CH, t1 - t0, DV, device=X.device) <= self.proba_flashback
-            ).long()
-
-            self.rec_V[:, :, t0:t1] = (
-                mask * V[n, src_head, src_time, dv]
-                + (1 - mask) * self.rec_V[:, :, t0:t1]
-            )
-
-            self.rec_K[:, :, t0:t1] = (
-                mask * K[n, src_head, src_time, dk]
-                + (1 - mask) * self.rec_K[:, :, t0:t1]
-            )
 
         ######################################################################
         # compute the readout
