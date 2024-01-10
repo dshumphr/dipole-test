@@ -117,7 +117,7 @@ parser.add_argument("--deterministic_synthesis", action="store_true", default=Fa
 
 parser.add_argument("--no_checkpoint", action="store_true", default=False)
 
-parser.add_argument("--overwrite_results", action="store_true", default=False)
+parser.add_argument("--continue_training", action="store_true", default=False)
 
 parser.add_argument("--checkpoint_name", type=str, default="checkpoint.pth")
 
@@ -426,7 +426,7 @@ else:
 try:
     os.mkdir(args.result_dir)
 except FileExistsError:
-    if not args.overwrite_results:
+    if not args.continue_training:
         print(f"result directory {args.result_dir} already exists")
         exit(1)
 

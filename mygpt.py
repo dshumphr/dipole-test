@@ -574,6 +574,9 @@ class Caterpillar(nn.Module):
         ######################################################################
 
         if self.training and self.proba_gate_dropout > 0.0:
+            # This is a better implementation of "flashbacks".  A is
+            # NxExT where e is the caterpillar's row.
+
             warnings.warn("gate dropout", RuntimeWarning)
             epsilon = 0.5
 
