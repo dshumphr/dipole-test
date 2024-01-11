@@ -570,19 +570,10 @@ class Caterpillar(nn.Module):
 
         warnings.warn("rotating barrel", RuntimeWarning)
 
-        # print(f"SANITY2 {N=} {H=} {R=} {t0=} {t1=} {G.size()=}")
-
-        n_barrel = torch.arange(N, device=G.device)[:, None, None, None]
-        h_barrel = torch.arange(H, device=G.device)[None, :, None, None]
         r_barrel = torch.arange(R, device=G.device)[None, None, :, None]
         t_barrel = torch.arange(t1 - t0, device=G.device)[None, None, None, :]
         r_barrel = (r_barrel + (t_barrel + t0) // L) % R
-
-        # GG = G.gather(dim=2,index=r_barrel)
-        G = G[n_barrel, h_barrel, r_barrel, t_barrel]
-
-        # print("SANITY", (GG-G).abs())
-        # exit(0)
+        G = G.gather(dim=2, index=r_barrel.expand_as(G))
 
         ######################################################################
         # The "flashbacks"
