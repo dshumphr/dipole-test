@@ -16,14 +16,6 @@ import mygpt, tasks, problems
 
 ######################################################################
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    torch.backends.cuda.matmul.allow_tf32 = True
-else:
-    device = torch.device("cpu")
-
-######################################################################
-
 
 def str2bool(x):
     x = x.lower()
@@ -54,6 +46,8 @@ parser.add_argument("--result_dir", type=str, default=None)
 parser.add_argument("--seed", type=int, default=0)
 
 parser.add_argument("--max_percents_of_test_in_train", type=int, default=1)
+
+parser.add_argument("--force_cpu", type=str2bool, default=False)
 
 ########################################
 
@@ -214,6 +208,14 @@ assert args.picocvlr_prune_properties in {"none", "train+eval", "eval"}
 
 if args.result_dir is None:
     args.result_dir = f"results_{args.task}_{args.model}"
+
+######################################################################
+
+if not args.force_cpu and torch.cuda.is_available():
+    device = torch.device("cuda")
+    torch.backends.cuda.matmul.allow_tf32 = True
+else:
+    device = torch.device("cpu")
 
 ######################################################################
 
@@ -832,7 +834,7 @@ if nb_epochs_finished >= nb_epochs:
         deterministic_synthesis=args.deterministic_synthesis,
     )
 
-time_pred_result = None
+time_pred_result = datetime.datetime.now()
 
 it = 0
 
@@ -910,10 +912,9 @@ for n_epoch in range(nb_epochs_finished, nb_epochs):
         )
 
         time_current_result = datetime.datetime.now()
-        if time_pred_result is not None:
-            log_string(
-                f"next_result {time_current_result + (time_current_result - time_pred_result)}"
-            )
+        log_string(
+            f"next_result {time_current_result + (time_current_result - time_pred_result)}"
+        )
         time_pred_result = time_current_result
 
     checkpoint = {

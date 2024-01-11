@@ -530,22 +530,22 @@ class Caterpillar(nn.Module):
         DV = self.w_V.size(1)
         DK = self.w_K.size(1)
         DM = self.w_O.size(1)
-        CH = self.caterpillar_height
-        CL = self.caterpillar_length
+        R = self.caterpillar_height
+        L = self.caterpillar_length
 
         assert (
-            t0 >= CL and (t1 - t0) % CL == 0
+            t0 >= L and (t1 - t0) % L == 0
         ), f"bs.first should be greater than caterpillar_length, and bs.nb should be a multiple of caterpillar_length"
 
         # We cache values to deal efficiently with auto-regression
 
         if bs.init_cache:
-            self.rec_V = X.new_zeros(N, CH, T, DV)
-            self.rec_K = X.new_zeros(N, CH, T, DK)
+            self.rec_V = X.new_zeros(N, R, T, DV)
+            self.rec_K = X.new_zeros(N, R, T, DK)
             # We start the recurrent sequences with optimizable
             # initial values. No idea if it helps.
-            self.rec_V[:, :, t0 - CL : t0] = self.init_V_rec[None, :, :, :]
-            self.rec_K[:, :, t0 - CL : t0] = self.init_K_rec[None, :, :, :]
+            self.rec_V[:, :, t0 - L : t0] = self.init_V_rec[None, :, :, :]
+            self.rec_K[:, :, t0 - L : t0] = self.init_K_rec[None, :, :, :]
 
             self.cache_Y = X.new_zeros(N, T, DM)
 
@@ -556,14 +556,30 @@ class Caterpillar(nn.Module):
         # Compute the recurrent state
 
         # This is the Gating sequence that modulates the storing of
-        # the new key and value in the CH pairs of the current
-        # stack. There are CH independent gating values, which means
+        # the new key and value in the R pairs of the current
+        # stack. There are R independent gating values, which means
         # that the current K/V may be stored in multiple pairs of the
         # recurrent state, or not at all.
 
         G = (
             torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
+
+        ######################################################################
+        # Roll the gating indexes
+
+        warnings.warn("rotating barrel", RuntimeWarning)
+        n_barrel = torch.arange(N, device=G.device)[:, None, None, None]
+        h_barrel = torch.arange(H, device=G.device)[None, :, None, None]
+        r_barrel = torch.arange(R, device=G.device)[None, None, :, None]
+        t_barrel = torch.arange(t1 - t0, device=G.device)[None, None, None, :]
+        r_barrel = (r_barrel + t_barrel + t0) % R
+
+        # print(f"({N}, {H}, {R}, {t1-t0}) {G.size()=}")
+
+        G = G[n_barrel, h_barrel, r_barrel, t_barrel]
+
+        # print(G.sum())
 
         ######################################################################
         # The "flashbacks"
@@ -593,7 +609,7 @@ class Caterpillar(nn.Module):
 
             G = (
                 G
-                # + dropout_head * (1 - epsilon - G.detach())
+                + dropout_head * (1 - epsilon - G.detach())
                 - dropout_tail * G.detach()
             )
 
@@ -607,26 +623,32 @@ class Caterpillar(nn.Module):
         G = G / G.sum(1, keepdim=True).clamp(min=1)
 
         A = 1 - G.sum(1)
+
+        # warnings.warn("harmonic recurrence", RuntimeWarning)
+        # har = torch.arange(t0, t1, device = G.device).float() + 1
+        # A = har / (har + 1)
+        # G = G / har
+
         gated_V = torch.einsum("nhrt,nhtd->nrtd", G, V)
         gated_K = torch.einsum("nhrt,nhtd->nrtd", G, K)
 
         # We start from cached values, which matters in inference
 
-        init_rec_V = self.rec_V[:, :, t0 - CL : t0]
-        init_rec_K = self.rec_K[:, :, t0 - CL : t0]
+        init_rec_V = self.rec_V[:, :, t0 - L : t0]
+        init_rec_K = self.rec_K[:, :, t0 - L : t0]
 
         #################################################################
         # Associative scan
 
         # Here there is a trick: Since the stack at position t is
-        # computed by updating that at position t-CL, the parallel
-        # scan operates with a period of CL. To do so we split the
-        # sequence indexing in two axes, the second of size CL, and
+        # computed by updating that at position t-L, the parallel
+        # scan operates with a period of L. To do so we split the
+        # sequence indexing in two axes, the second of size L, and
         # run the parallel scan using the first as the sequence index.
 
-        A = A.unflatten(2, (-1, CL))
-        gated_V = gated_V.unflatten(2, (-1, CL))
-        gated_K = gated_K.unflatten(2, (-1, CL))
+        A = A.unflatten(2, (-1, L))
+        gated_V = gated_V.unflatten(2, (-1, L))
+        gated_K = gated_K.unflatten(2, (-1, L))
 
         next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
         next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
@@ -644,14 +666,14 @@ class Caterpillar(nn.Module):
         # the column in the caterpillar
 
         windowed_V = moving_window(
-            self.rec_V[:, :, t0 - CL + 1 : t1], dim=2, win_dim=3, win_size=CL
+            self.rec_V[:, :, t0 - L + 1 : t1], dim=2, win_dim=3, win_size=L
         )
 
         windowed_K = moving_window(
-            self.rec_K[:, :, t0 - CL + 1 : t1], dim=2, win_dim=3, win_size=CL
+            self.rec_K[:, :, t0 - L + 1 : t1], dim=2, win_dim=3, win_size=L
         )
 
-        # We have an attention score for each of the CHxCL values
+        # We have an attention score for each of the RxL values
 
         ar = torch.einsum(
             "nhtd,nftld->nhtfl",
