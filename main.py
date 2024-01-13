@@ -202,9 +202,11 @@ parser.add_argument("--mixing_deterministic_start", action="store_true", default
 
 ######################################################################
 
-args = parser.parse_args()
+# args = parser.parse_args()
 
-assert args.picocvlr_prune_properties in {"none", "train+eval", "eval"}
+args, sup_args = parser.parse_known_args()
+
+sup_args = dict([x.removeprefix("--").split("=") for x in sup_args])
 
 if args.result_dir is None:
     args.result_dir = f"results_{args.task}_{args.model}"
@@ -432,6 +434,8 @@ except FileExistsError:
         print(f"result directory {args.result_dir} already exists")
         exit(1)
 
+loss_file = open(os.path.join(args.result_dir, "loss.dat"), "a")
+
 log_file = open(os.path.join(args.result_dir, args.log_filename), "a")
 
 if args.seed >= 0:
@@ -461,12 +465,15 @@ with os.popen("sha256sum *.py") as f:
         log_string(f"sha256sum {l.strip()}")
 
 now = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-os.system(f"tar zcvf {args.result_dir}/src-{now}.tgz *.py *.sh")
+os.system(f"tar --ignore-failed-read zcvf {args.result_dir}/src-{now}.tgz *.py *.sh")
 
 log_string(f"argv {' '.join(sys.argv)}")
 
 for n in vars(args):
     log_string(f"args.{n} {getattr(args, n)}")
+
+for n in vars(sup_args):
+    log_string(f"sup_args.{n} {getattr(sup_args, n)}")
 
 
 ######################################################################
@@ -503,6 +510,9 @@ def get_lr(n_epoch, it):
 
 
 ######################################################################
+
+
+assert args.picocvlr_prune_properties in {"none", "train+eval", "eval"}
 
 
 def picoclvr_pruner_horizontal_green(p):
@@ -730,6 +740,8 @@ model = mygpt.MyGPT(
     causal=True,
     dropout=args.dropout,
     attention_layer=args.attention,
+    logger=log_string,
+    **sup_args,
 )
 
 model.to(device)
@@ -838,6 +850,8 @@ time_pred_result = datetime.datetime.now()
 
 it = 0
 
+n_batch = 0
+
 for n_epoch in range(nb_epochs_finished, nb_epochs):
     if args.optim == "sgd":
         optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate)
@@ -878,6 +892,12 @@ for n_epoch in range(nb_epochs_finished, nb_epochs):
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
+
+        grad_norm = sum([p.grad.pow(2).sum() for p in model.parameters()]).sqrt()
+
+        loss_file.write(f"{n_epoch} {n_batch} {loss.item()} {grad_norm.item()}\n")
+
+        n_batch += 1
 
     with torch.autograd.no_grad():
         model.eval()

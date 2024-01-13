@@ -166,3 +166,14 @@ def insert_flash_back(rec_V, V, rec_K, K, t0, t1, CL, proba):
                 + (1 - mask) * self.rec_K[:, :, t0:t1]
             )
 
+
+######################################################################
+
+2024 Jan 13 13:38:31 (from mygpt.py)
+
+        g= F.sigmoid(self.b_G)
+        a=1-g
+
+        print(f"\n\nSANITY {a**T}\n")
+        exit(0)
+
