@@ -465,15 +465,15 @@ with os.popen("sha256sum *.py") as f:
         log_string(f"sha256sum {l.strip()}")
 
 now = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-os.system(f"tar --ignore-failed-read zcvf {args.result_dir}/src-{now}.tgz *.py *.sh")
+os.system(f"tar zcvf {args.result_dir}/src-{now}.tgz *.py *.sh")
 
 log_string(f"argv {' '.join(sys.argv)}")
 
 for n in vars(args):
     log_string(f"args.{n} {getattr(args, n)}")
 
-for n in vars(sup_args):
-    log_string(f"sup_args.{n} {getattr(sup_args, n)}")
+for k, v in sup_args.items():
+    log_string(f'sup_args["{k}"] "{v}"')
 
 
 ######################################################################
