@@ -491,15 +491,26 @@ class Caterpillar(nn.Module):
         self.caterpillar_height = caterpillar_height
         self.attention_dropout = attention_dropout
 
-        self.proba_gate_dropout = 0.0
+        ######################################################################
+        # sup_args
 
-        default_bg = kwargs.get("default_bg")
-        if default_bg is None:
+        x = kwargs.get("gate_dropout")
+        if x is None:
+            self.proba_gate_dropout = 0.0
+        else:
+            self.proba_gate_dropout = float(x)
+
+        logger(f"self.proba_gate_dropout {self.proba_gate_dropout}")
+
+        x = kwargs.get("default_bg")
+        if x is None:
             default_bg = -math.log(caterpillar_height - 1)
         else:
-            default_bg = float(default_bg)
+            default_bg = float(x)
 
         logger(f"default_bg {default_bg}")
+
+        ######################################################################
 
         self.w_G = randw(nb_heads, caterpillar_height, dim_model)
         self.b_G = nn.Parameter(torch.full((nb_heads, caterpillar_height), default_bg))
@@ -575,6 +586,31 @@ class Caterpillar(nn.Module):
             torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
 
+        # warnings.warn("softmax gating", RuntimeWarning)
+
+        # G = (
+        # torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
+        # ).softmax(dim=2)
+
+        ######################################################################
+        # The "flashbacks"
+
+        if self.training and self.proba_gate_dropout > 0.0:
+            # This is a better implementation of "flashbacks".
+
+            # G is NxHxExT where e is the caterpillar's row.
+
+            warnings.warn("gate dropout", RuntimeWarning)
+
+            kill = (
+                torch.rand(G.size(), device=G.device) <= self.proba_gate_dropout
+            ).float()
+
+            alpha = G / (1 - self.proba_gate_dropout)
+
+            G = alpha * (1 - kill)
+
+        ######################################################################
         # Clip the gating to avoid values greater than 1 when several
         # heads hit the same row
 
@@ -589,40 +625,6 @@ class Caterpillar(nn.Module):
         # t_barrel = torch.arange(t1 - t0, device=G.device)[None, None, None, :]
         # r_barrel = (r_barrel + (t_barrel + t0) // L) % R
         # G = G.gather(dim=2, index=r_barrel.expand_as(G))
-
-        ######################################################################
-        # The "flashbacks"
-
-        if self.training and self.proba_gate_dropout > 0.0:
-            # This is a better implementation of "flashbacks".
-
-            # G is NxHxExT where e is the caterpillar's row.
-
-            warnings.warn("gate dropout", RuntimeWarning)
-            epsilon = 0.5
-
-            dropout_head = (
-                (torch.rand(N, H, 1, t1 - t0, device=G.device).sort(dim=3).indices == 0)
-                .expand_as(G)
-                .float()
-            )
-
-            dropout_tail = dropout_head.cumsum(dim=3) - dropout_head
-
-            dropout_active = (
-                torch.rand(N, 1, 1, 1, device=G.device) < self.proba_gate_dropout
-            ).long()
-
-            dropout_head *= dropout_active
-            dropout_tail *= dropout_active
-
-            G = (
-                G
-                + dropout_head * (1 - epsilon - G.detach())
-                - dropout_tail * G.detach()
-            )
-
-        ######################################################################
 
         # We prepare the arguments for the parallel scan
 
