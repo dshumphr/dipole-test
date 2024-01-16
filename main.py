@@ -835,6 +835,24 @@ if args.max_percents_of_test_in_train >= 0:
 
 ##############################
 
+for input in task.batches(split="train", desc="calibrate"):
+    input = input.to(device)
+    output = model(mygpt.BracketedSequence(input)).x
+
+for n, m in model.named_modules():
+    for a in dir(m):
+        x = getattr(m, a)
+        if isinstance(x, mygpt.Calibrator):
+            print(f"####### ${n} | ${a} ########################")
+            mean, std = x.moments()
+            print("mean\n", mean, "\n")
+            print("std\n", std, "\n")
+            print(f"############################################\n\n")
+
+exit(0)
+
+##############################
+
 nb_samples_seen = 0
 
 if nb_epochs_finished >= nb_epochs:

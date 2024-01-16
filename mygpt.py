@@ -464,6 +464,36 @@ def moving_window(x, dim, win_dim, win_size):
 ##############################
 
 
+class Calibrator:
+    def __init__(self, w=None, b=None):
+        self.w = w
+        self.b = b
+        self.s, self.s_sq, self.n = 0, 0, 0
+        self.mean, self.std = 0, 0
+
+    def update(self, X):
+        X = X.detach()
+        self.s += X.sum(dim=0)
+        self.s_sq += X.pow(2).sum(dim=0)
+        self.n += X.size(0)
+
+    def moments(self):
+        mean = self.s / self.n
+        std = (self.s_sq / self.n - mean * mean).sqrt()
+        return mean, std
+
+    def normalize(self):
+        mean, std = self.moments()
+        if self.b is not None:
+            self.b.sub_(mean)
+        if self.w is not None:
+            self.w.div_(std)
+        result = mean - self.mean, std - self.std
+        self.mean, self.std = mean, std
+        self.s, self.s_sq, self.n = 0, 0, 0
+        return result
+
+
 class Caterpillar(nn.Module):
     def __init__(
         self,
@@ -531,6 +561,10 @@ class Caterpillar(nn.Module):
             dim_v,
         )
 
+        self.calibrator_G = Calibrator()
+        self.calibrator_rec_V = Calibrator()
+        self.calibrator_rec_K = Calibrator()
+
     def reset_inner_loss(self):
         self.acc_attention = 0
         self.acc_nb = 0
@@ -565,8 +599,8 @@ class Caterpillar(nn.Module):
             self.rec_K = X.new_zeros(N, R, T, DK)
             # We start the recurrent sequences with optimizable
             # initial values. No idea if it helps.
-            self.rec_V[:, :, t0 - L : t0] = self.init_V_rec[None, :, :, :]
-            self.rec_K[:, :, t0 - L : t0] = self.init_K_rec[None, :, :, :]
+            self.rec_V[:, :, t0 - L : t0, :] = self.init_V_rec[None, :, :, :]
+            self.rec_K[:, :, t0 - L : t0, :] = self.init_K_rec[None, :, :, :]
 
             self.cache_Y = X.new_zeros(N, T, DM)
 
@@ -585,6 +619,8 @@ class Caterpillar(nn.Module):
         G = (
             torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
+
+        self.calibrator_G.update(G.reshape(-1, G.size(-1)))
 
         # warnings.warn("softmax gating", RuntimeWarning)
 
@@ -659,8 +695,18 @@ class Caterpillar(nn.Module):
         next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
         next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
 
-        self.rec_V[:, :, t0:t1] = next_V.flatten(2, 3)
-        self.rec_K[:, :, t0:t1] = next_K.flatten(2, 3)
+        next_V = next_V.flatten(2, 3)
+        next_K = next_K.flatten(2, 3)
+
+        self.calibrator_rec_V.update(
+            next_V.permute(0, 1, 3, 2).reshape(-1, next_V.size(2))
+        )
+        self.calibrator_rec_K.update(
+            next_K.permute(0, 1, 3, 2).reshape(-1, next_K.size(2))
+        )
+
+        self.rec_V[:, :, t0:t1] = next_V
+        self.rec_K[:, :, t0:t1] = next_K
 
         ######################################################################
         # compute the readout
