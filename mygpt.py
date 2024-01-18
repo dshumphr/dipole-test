@@ -126,7 +126,6 @@ class AddPositionalEncoding(nn.Module):
 
 import pscan
 
-
 # X is /.../xTxD   A is /.../xT   Y_init is /.../xD
 
 
@@ -145,6 +144,18 @@ def pscan_dim(A, X, Y_init, dim=-2):
     Y = pscan.pscan(A, X, Y_init).reshape(s)
 
     return Y
+
+
+def pscan_rgrad(grad_Y, A, X, Y_init, dim=-2, eps=1e-2):
+    with torch.no_grad():
+        s_A, s_X = 0, 0
+        for t in range(X.size(dim) - 1, 0, -1):
+            delta = (grad_Y[t] - s_A) / A[t].grad
+            s_A += A[t].grad * delta
+            A[t].grad = delta
+            delta = (grad_Y[t] - s_X) / X[t].grad
+            s_X += X[t].grad * delta
+            X[t].grad = delta
 
 
 def pscan_shape(A, X, Y_init):
@@ -464,36 +475,6 @@ def moving_window(x, dim, win_dim, win_size):
 ##############################
 
 
-class Calibrator:
-    def __init__(self, w=None, b=None):
-        self.w = w
-        self.b = b
-        self.s, self.s_sq, self.n = 0, 0, 0
-        self.mean, self.std = 0, 0
-
-    def update(self, X):
-        X = X.detach()
-        self.s += X.sum(dim=0)
-        self.s_sq += X.pow(2).sum(dim=0)
-        self.n += X.size(0)
-
-    def moments(self):
-        mean = self.s / self.n
-        std = (self.s_sq / self.n - mean * mean).sqrt()
-        return mean, std
-
-    def normalize(self):
-        mean, std = self.moments()
-        if self.b is not None:
-            self.b.sub_(mean)
-        if self.w is not None:
-            self.w.div_(std)
-        result = mean - self.mean, std - self.std
-        self.mean, self.std = mean, std
-        self.s, self.s_sq, self.n = 0, 0, 0
-        return result
-
-
 class Caterpillar(nn.Module):
     def __init__(
         self,
@@ -561,10 +542,6 @@ class Caterpillar(nn.Module):
             dim_v,
         )
 
-        self.calibrator_G = Calibrator()
-        self.calibrator_rec_V = Calibrator()
-        self.calibrator_rec_K = Calibrator()
-
     def reset_inner_loss(self):
         self.acc_attention = 0
         self.acc_nb = 0
@@ -620,8 +597,6 @@ class Caterpillar(nn.Module):
             torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
         ).sigmoid()
 
-        self.calibrator_G.update(G.reshape(-1, G.size(-1)))
-
         # warnings.warn("softmax gating", RuntimeWarning)
 
         # G = (
@@ -646,64 +621,47 @@ class Caterpillar(nn.Module):
 
             G = alpha * (1 - kill)
 
-        ######################################################################
-        # Clip the gating to avoid values greater than 1 when several
-        # heads hit the same row
+        def recurrence(G, V, K):
+            # Clip the gating to avoid values greater than 1 when several
+            # heads hit the same row
 
-        G = G / G.sum(1, keepdim=True).clamp(min=1)
+            G = G / G.sum(1, keepdim=True).clamp(min=1)
 
-        ######################################################################
-        # Roll the gating indexes
+            # We prepare the arguments for the parallel scan
 
-        # warnings.warn("rotating barrel", RuntimeWarning)
+            A = 1 - G.sum(1)
 
-        # r_barrel = torch.arange(R, device=G.device)[None, None, :, None]
-        # t_barrel = torch.arange(t1 - t0, device=G.device)[None, None, None, :]
-        # r_barrel = (r_barrel + (t_barrel + t0) // L) % R
-        # G = G.gather(dim=2, index=r_barrel.expand_as(G))
+            gated_V = torch.einsum("nhrt,nhtd->nrtd", G, V)
+            gated_K = torch.einsum("nhrt,nhtd->nrtd", G, K)
 
-        # We prepare the arguments for the parallel scan
+            # We start from cached values, which matters in inference
 
-        A = 1 - G.sum(1)
+            init_rec_V = self.rec_V[:, :, t0 - L : t0]
+            init_rec_K = self.rec_K[:, :, t0 - L : t0]
 
-        # warnings.warn("harmonic recurrence", RuntimeWarning)
-        # har = torch.arange(t0, t1, device = G.device).float() + 1
-        # A = har / (har + 1)
-        # G = G / har
+            # Associative scan
 
-        gated_V = torch.einsum("nhrt,nhtd->nrtd", G, V)
-        gated_K = torch.einsum("nhrt,nhtd->nrtd", G, K)
+            # Here there is a trick: Since the stack at position t is
+            # computed by updating that at position t-L, the parallel
+            # scan operates with a period of L. To do so we split the
+            # sequence indexing in two axes, the second of size L, and
+            # run the parallel scan using the first as the sequence index.
 
-        # We start from cached values, which matters in inference
+            A = A.unflatten(2, (-1, L))
+            gated_V = gated_V.unflatten(2, (-1, L))
+            gated_K = gated_K.unflatten(2, (-1, L))
 
-        init_rec_V = self.rec_V[:, :, t0 - L : t0]
-        init_rec_K = self.rec_K[:, :, t0 - L : t0]
+            next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
+            next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
+
+            next_V = next_V.flatten(2, 3)
+            next_K = next_K.flatten(2, 3)
+
+            return next_V, next_K
 
         #################################################################
-        # Associative scan
 
-        # Here there is a trick: Since the stack at position t is
-        # computed by updating that at position t-L, the parallel
-        # scan operates with a period of L. To do so we split the
-        # sequence indexing in two axes, the second of size L, and
-        # run the parallel scan using the first as the sequence index.
-
-        A = A.unflatten(2, (-1, L))
-        gated_V = gated_V.unflatten(2, (-1, L))
-        gated_K = gated_K.unflatten(2, (-1, L))
-
-        next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
-        next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
-
-        next_V = next_V.flatten(2, 3)
-        next_K = next_K.flatten(2, 3)
-
-        self.calibrator_rec_V.update(
-            next_V.permute(0, 1, 3, 2).reshape(-1, next_V.size(2))
-        )
-        self.calibrator_rec_K.update(
-            next_K.permute(0, 1, 3, 2).reshape(-1, next_K.size(2))
-        )
+        next_V, next_K = recurrence(G, V, K)
 
         self.rec_V[:, :, t0:t1] = next_V
         self.rec_K[:, :, t0:t1] = next_K

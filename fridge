@@ -204,3 +204,91 @@ def insert_flash_back(rec_V, V, rec_K, K, t0, t1, CL, proba):
                 + dropout_head * (1 - epsilon - G.detach())
                 - dropout_tail * G.detach()
             )
+
+######################################################################
+
+2024 Jan 18 07:39:29 (from mygpt.py)
+
+class Calibrator:
+    def __init__(self, w=None, b=None):
+        self.w = w
+        self.b = b
+        self.s, self.s_sq, self.n = 0, 0, 0
+        self.mean, self.std = 0, 0
+
+    def update(self, X):
+        X = X.detach()
+        self.s += X.sum(dim=0)
+        self.s_sq += X.pow(2).sum(dim=0)
+        self.n += X.size(0)
+
+    def moments(self):
+        mean = self.s / self.n
+        std = (self.s_sq / self.n - mean * mean).sqrt()
+        return mean, std
+
+    def normalize(self):
+        mean, std = self.moments()
+        if self.b is not None:
+            self.b.sub_(mean)
+        if self.w is not None:
+            self.w.div_(std)
+        result = mean - self.mean, std - self.std
+        self.mean, self.std = mean, std
+        self.s, self.s_sq, self.n = 0, 0, 0
+        return result
+
+
+
+######################################################################
+
+2024 Jan 18 07:39:34 (from mygpt.py)
+
+        # self.calibrator_G = Calibrator()
+        # self.calibrator_rec_V = Calibrator()
+        # self.calibrator_rec_K = Calibrator()
+
+
+######################################################################
+
+2024 Jan 18 07:39:37 (from mygpt.py)
+
+        # self.calibrator_G.update(G.reshape(-1, G.size(-1)))
+
+
+######################################################################
+
+2024 Jan 18 07:39:42 (from mygpt.py)
+
+        # self.calibrator_rec_V.update(
+        # next_V.permute(0, 1, 3, 2).reshape(-1, next_V.size(2))
+        # )
+        # self.calibrator_rec_K.update(
+        # next_K.permute(0, 1, 3, 2).reshape(-1, next_K.size(2))
+        # )
+
+
+######################################################################
+
+2024 Jan 18 07:47:12 (from mygpt.py)
+
+        ######################################################################
+        # Roll the gating indexes
+
+        # warnings.warn("rotating barrel", RuntimeWarning)
+
+        # r_barrel = torch.arange(R, device=G.device)[None, None, :, None]
+        # t_barrel = torch.arange(t1 - t0, device=G.device)[None, None, None, :]
+        # r_barrel = (r_barrel + (t_barrel + t0) // L) % R
+        # G = G.gather(dim=2, index=r_barrel.expand_as(G))
+
+
+######################################################################
+
+2024 Jan 18 07:47:25 (from mygpt.py)
+
+        # warnings.warn("harmonic recurrence", RuntimeWarning)
+        # har = torch.arange(t0, t1, device = G.device).float() + 1
+        # A = har / (har + 1)
+        # G = G / har
+
