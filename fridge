@@ -292,3 +292,13 @@ class Calibrator:
         # A = har / (har + 1)
         # G = G / har
 
+
+######################################################################
+
+2024 Jan 18 08:46:18 (from mygpt.py)
+
+        # warnings.warn("softmax gating", RuntimeWarning)
+
+        # G = (
+        # torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
+        # ).softmax(dim=2)
