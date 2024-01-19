@@ -101,7 +101,9 @@ parser.add_argument("--caterpillar_height", type=int, default=None)
 
 parser.add_argument("--gate_dropout_proba", type=float, default=0.0)
 
-parser.add_argument("--gate_dropout_sync", type=bool, default=False)
+parser.add_argument("--gate_dropout_sync", type=str2bool, default=True)
+
+parser.add_argument("--gate_dropout_replace", type=str2bool, default=True)
 
 parser.add_argument("--rho_inner_loss", type=float, default=0.0)
 

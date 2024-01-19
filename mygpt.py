@@ -504,6 +504,7 @@ class Caterpillar(nn.Module):
 
         self.gate_dropout_proba = args.gate_dropout_proba
         self.gate_dropout_sync = args.gate_dropout_sync
+        self.gate_dropout_replace = args.gate_dropout_replace
 
         ######################################################################
 
@@ -527,14 +528,14 @@ class Caterpillar(nn.Module):
             dim_v,
         )
 
-    def reset_inner_loss(self):
-        self.acc_attention = 0
-        self.acc_nb = 0
+    # def reset_inner_loss(self):
+    # self.acc_attention = 0
+    # self.acc_nb = 0
 
-    def get_inner_loss(self):
-        # warnings.warn("l2 regularization", RuntimeWarning)
-        # return (self.acc_attention / self.acc_nb).pow(2).sum()
-        return torch.tensor([0], device=self.w_Q.device)
+    # def get_inner_loss(self):
+    # warnings.warn("l2 regularization", RuntimeWarning)
+    # return (self.acc_attention / self.acc_nb).pow(2).sum()
+    # return torch.tensor([0], device=self.w_Q.device)
 
     def forward(self, bs):
         # Dimensions to make the source a bit clearer, that's needed
@@ -612,11 +613,8 @@ class Caterpillar(nn.Module):
             gated_V = gated_V.unflatten(2, (-1, L))
             gated_K = gated_K.unflatten(2, (-1, L))
 
-            next_V = pscan_dim(A, gated_V, init_rec_V, dim=2)
-            next_K = pscan_dim(A, gated_K, init_rec_K, dim=2)
-
-            next_V = next_V.flatten(2, 3)
-            next_K = next_K.flatten(2, 3)
+            next_V = pscan_dim(A, gated_V, init_rec_V, dim=2).flatten(2, 3)
+            next_K = pscan_dim(A, gated_K, init_rec_K, dim=2).flatten(2, 3)
 
             return next_V, next_K
 
@@ -651,10 +649,14 @@ class Caterpillar(nn.Module):
 
             masked_next_V, masked_next_K = recurrence(G * mask, V, K)
 
-            next_V = next_V.detach() + (masked_next_V - masked_next_V.detach()) / (
+            if self.gate_dropout_replace:
+                next_V = next_V.detach()
+                next_K = next_K.detach()
+
+            next_V = next_V + (masked_next_V - masked_next_V.detach()) / (
                 1 - self.gate_dropout_proba
             )
-            next_K = next_K.detach() + (masked_next_K - masked_next_K.detach()) / (
+            next_K = next_K + (masked_next_K - masked_next_K.detach()) / (
                 1 - self.gate_dropout_proba
             )
 
