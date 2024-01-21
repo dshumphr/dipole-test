@@ -302,3 +302,17 @@ class Calibrator:
         # G = (
         # torch.einsum("ntc,hrc->nhrt", X, self.w_G) + self.b_G[None, :, :, None]
         # ).softmax(dim=2)
+
+######################################################################
+
+2024 Jan 21 16:55:24 (from main.py)
+
+        with open("test.dat", "a") as f:
+            for m filter(lambda m: isinstance(m,mygpt.Catenn.Linear),model.modules()):
+                for p in m.parameters() ]
+
+
+        for m in model.modules():
+            if isinstance(m, mygpt.Caterpillar):
+                
+
