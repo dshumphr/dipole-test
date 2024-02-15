@@ -316,3 +316,22 @@ class Calibrator:
             if isinstance(m, mygpt.Caterpillar):
                 
 
+
+######################################################################
+
+2024 Feb 13 22:53:52 (from mygpt.py)
+
+        ######################################################################
+        # Prepare the keys
+
+        k_star = self.k_star[:, None, :].expand(-1, t1 - t0, -1)
+
+        warnings.warn("rotating key barrel", RuntimeWarning)
+        k_star = self.k_star[:, None, :].expand(-1, x_q.size(1), -1)
+        t_barrel = torch.arange(t0, t1, device=k_star.device)
+        t_barrel = t_barrel[None, :].expand(k_star.size(0), t1 - t0)
+        l_barrel = (
+            torch.arange(k_star.size(0), device=k_star.device)[:, None] + t_barrel
+        ) % k_star.size(0)
+        k_star = k_star[l_barrel, t_barrel]
+
