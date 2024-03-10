@@ -656,6 +656,7 @@ class QKVAttention(nn.Module):
         self.horizon = horizon
         self.attention_dropout = attention_dropout
         self.record_attention = False
+        self.offset = 3
 
         self.w_q = randw(nb_heads, dim_qk, dim_model)
         self.w_k = randw(nb_heads, dim_qk, dim_model)
@@ -676,6 +677,11 @@ class QKVAttention(nn.Module):
             self.cache_v = x_q.new_zeros(
                 x_q.size(0), self.w_v.size(0), x_q.size(1), self.w_v.size(1)
             )
+            # Add cache_v2 initialization
+            self.cache_v2 = x_q.new_zeros(
+                x_q.size(0), self.w_v.size(0), x_q.size(1), self.w_v.size(1)
+            )
+            #self.cache_v2 = -1 * self.cache_v  # Assuming cache_v is already populated
             self.cache_y = x_q.new_zeros(x_q.size(0), x_q.size(1), self.w_o.size(1))
 
         q = torch.einsum("ntc,hdc->nhtd", x_q[:, bs.first : bs.first + bs.nb], self.w_q)
@@ -686,6 +692,8 @@ class QKVAttention(nn.Module):
         self.cache_v[:, :, bs.first : bs.first + bs.nb] = torch.einsum(
             "ntc,hdc->nhtd", x_q[:, bs.first : bs.first + bs.nb], self.w_v
         )
+        # Populate cache_v2
+        self.cache_v2[:, :, bs.first : bs.first + bs.nb] = -1 * self.cache_v[:, :, bs.first : bs.first + bs.nb]
 
         a = torch.einsum(
             "nhtd,nhsd->nhts", q, self.cache_k[:, :, : bs.first + bs.nb]
@@ -712,20 +720,25 @@ class QKVAttention(nn.Module):
                 self.cache_attzero[
                     :, :, bs.first : bs.first + bs.nb, : bs.first + bs.nb
                 ],
-                float("-inf"),
+                0,
             )
 
-        a = a.softmax(dim=3)
+        # Apply custom kernel function
+        a = torch.exp(torch.abs(a) - self.offset)
+        # Normalize the scores
+        a = a / torch.sum(a, dim=-1, keepdim=True)
 
         if self.record_attention:
             self.a = a
 
         a = F.dropout(a, self.attention_dropout, self.training)
 
-        y = torch.einsum(
-            "nhts,nhsd->nthd", a, self.cache_v[:, :, : bs.first + bs.nb]
-        ).flatten(2)
+        value_mask = a > 0
+        y1 = torch.einsum("nhts,nhsd->nthd", a * value_mask, self.cache_v[:, :, : bs.first + bs.nb])
+        y2 = torch.einsum("nhts,nhsd->nthd", a * (~value_mask), self.cache_v2[:, :, : bs.first + bs.nb])
+        y = y1 + y2
 
+        y = y.flatten(2)
         self.cache_y[:, bs.first : bs.first + bs.nb] = y @ self.w_o
 
         return BracketedSequence(self.cache_y, bs.first, bs.nb, bs.init_cache)

@@ -14,8 +14,8 @@ from torch.nn import functional as F
 
 from mygpt import BracketedSequence
 
-# from graph import save_attention_image
-save_attention_image = None
+from graph import save_attention_image
+#save_attention_image = None
 
 ######################################################################
 

@@ -1069,11 +1069,12 @@ for n_epoch in range(nb_epochs_finished, nb_epochs):
     log_string(f"memex_proba {memex_proba}")
 
     warnings.warn("memex v3", RuntimeWarning)
-    train_batches = add_memex_v3(
-        batches=task.batches(split="train"),
-        memex_proba=memex_proba,
-        marker_token=memex_marker,
-    )
+    train_batches = task.batches(split="train")
+    #add_memex_v3(
+    #    batches=task.batches(split="train"),
+    #    memex_proba=memex_proba,
+    #    marker_token=memex_marker,
+    #)
 
     def add_none(it):
         for x in it:
@@ -1141,7 +1142,7 @@ for n_epoch in range(nb_epochs_finished, nb_epochs):
             grad_norm = sum([p.grad.pow(2).sum() for p in model.parameters()]).sqrt()
             loss_file.write(f"{n_epoch} {n_batch} {loss.item()} {grad_norm.item()}\n")
             lambda_file.write(
-                f"{n_epoch} {n_batch} {l_memex} {norm_regular} {norm_memex}\n"
+                f"{n_epoch} {n_batch} \n"
             )
             optimizer.zero_grad()
             nb_acc_samples = 0
